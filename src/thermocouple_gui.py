@@ -3,6 +3,7 @@ from firebase_admin import db
 import os
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import csv
@@ -337,11 +338,16 @@ def launch_gui():
     from firebase_admin import credentials
     global firebase_db_ref
     if not firebase_initialized:
-        cred = credentials.Certificate(firebase_config['serviceAccount'])
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': firebase_config['databaseURL']
-        })
-        firebase_initialized = True
+        try:
+            cred = credentials.Certificate(firebase_config['serviceAccount'])
+            firebase_admin.initialize_app(cred, {
+                'databaseURL': firebase_config['databaseURL']
+            })
+            firebase_initialized = True
+        except Exception as e:
+            print(f"Firebase initialization error: {e}")
+            tk.messagebox.showerror("Firebase Error", f"Failed to initialize Firebase:\n{e}")
+            return
     # Set up a reference to the Firebase database root
     global firebase_db_ref
     firebase_db_ref = db.reference('readings')

@@ -26,6 +26,11 @@
       const greenMaxInput = document.getElementById('greenMaxInput');
       const yellowMaxInput = document.getElementById('yellowMaxInput');
       const redMaxInput = document.getElementById('redMaxInput');
+      const unitToggle   = document.getElementById('unitToggle');
+      const lastReadings = {};
+      function toDisplayValue(tempC) {
+        return unitToggle.checked ? (tempC * 9/5 + 32) : tempC;
+      }
 
       const centerX = 100;
       const centerY = 100;
@@ -39,16 +44,18 @@
         console.log("Update received:", r);
         // Only update gauges for provided board/channel
         if (typeof r.board_id === 'undefined' || typeof r.channel === 'undefined') return;
-        const tempVal = typeof r.raw_temp === 'number' ? r.raw_temp : 0;
+        lastReadings[`${r.board_id}-${r.channel}`] = r;
+        const tempC   = typeof r.raw_temp === 'number' ? r.raw_temp : 0;
+        const tempVal = toDisplayValue(tempC);
 
-        const clampedTemp = Math.min(Math.max(tempVal, 0), maxTemp);
+        const clampedTempC = Math.min(Math.max(tempC, 0), maxTemp);
         const greenMax = parseInt(greenMaxInput.value);
         const yellowMax = parseInt(yellowMaxInput.value);
 
         let color;
-        if (tempVal <= greenMax) {
+        if (tempC <= greenMax) {
           color = "#4caf50";
-        } else if (tempVal <= yellowMax) {
+        } else if (tempC <= yellowMax) {
           color = "#ff9800";
         } else {
           color = "#f44336";
@@ -63,13 +70,14 @@
         if (!arc || !text) return;
 
         const fullLength = 2 * Math.PI * radius * (270 / 360); // 270° arc
-        const visibleLength = (clampedTemp / maxTemp) * fullLength;
+        const visibleLength = (clampedTempC / maxTemp) * fullLength;
 
         arc.setAttribute("stroke-dasharray", `${visibleLength} ${fullLength}`);
         arc.setAttribute("stroke-dashoffset", "0");
         arc.setAttribute("stroke", color);
 
-        text.textContent = tempVal.toFixed(1) + " °C";
+        const unit = unitToggle.checked ? '°F' : '°C';
+        text.textContent = tempVal.toFixed(1) + " " + unit;
         text.setAttribute("fill", color);
       }
 
@@ -89,6 +97,11 @@
         const readings = Object.values(snapshot.val() || {});
         readings.forEach(updateGauge);
       });
+
+      unitToggle.addEventListener('change', () => {
+        Object.values(lastReadings).forEach(updateGauge);
+      });
+
     };
   </script>
   <!-- Firebase SDK -->
@@ -108,9 +121,13 @@
 <body>
   <h1>Donut Thermocouple (Latest Reading)</h1>
   <div id="controls">
-    <label>Green Max (°C): <input type="number" id="greenMaxInput" value="100" min="0" max="250"/></label>
-    <label>Yellow Max (°C): <input type="number" id="yellowMaxInput" value="150" min="0" max="250"/></label>
+    <label>Green Max (°C): <input type="number" id="greenMaxInput" value="180" min="0" max="300"/></label>
+    <label>Yellow Max (°C): <input type="number" id="yellowMaxInput" value="225" min="0" max="400"/></label>
     <label>Red Max (°C): <input type="number" id="redMaxInput" value="250" min="0" max="500"/></label>
+  </div>
+  <div id="unitControl" style="margin-bottom:20px;">
+    <label for="unitToggle">Display in °F:</label>
+    <input type="checkbox" id="unitToggle" />
   </div>
   <div style="display: flex; flex-direction: column; gap: 40px; align-items: center;">
   <div style="display: flex; align-items: center; gap: 20px; border: 1px solid #ccc; padding: 10px; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); border-radius: 8px; align-items: center;">

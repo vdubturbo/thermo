@@ -29,7 +29,7 @@
       <input type="number" id="thresholdInput" placeholder="e.g. 100" />
     </div>
     <div>
-      <label for="rawToggle">Show Calibrated Values:</label>
+      <label for="rawToggle">Show Raw Values:</label>
       <input type="checkbox" id="rawToggle" checked />
     </div>
     <button id="downloadBtn">Download CSV</button>
@@ -38,13 +38,38 @@
       <input type="checkbox" id="pointToggle" checked />
     </div>
     <div>
-      <button id="openDonutBtn">Temp Monitor Window</button>
+      <label for="unitToggle">Display in °F:</label>
+      <input type="checkbox" id="unitToggle" />
+    </div>
+    <div>
+      <button id="openDonutBtn">Temp Monitor View</button>
     </div>
   </div>
 
   <div id="channelControls"></div>
 
-  <canvas id="tempChart"></canvas>
+  <div style="display: flex; align-items: center;">
+    <input
+      type="range"
+      id="panSlider"
+      min="0"
+      max="100"
+      value="100"
+      style="
+        -webkit-appearance: none;
+        width: 300px;
+        height: 20px;
+        transform: rotate(-90deg);
+        transform-origin: top left;
+        margin-right: 10px;
+      "
+    />
+    <canvas id="tempChart" tabindex="0"></canvas>
+  </div>
+  <!-- Swapped slider labels -->
+  <label for="panSlider">Y-axis Pan:</label>
+  <label for="yPanSlider">X-axis Pan:</label>
+  <input type="range" id="yPanSlider" min="0" max="100" value="100" style="width: 100%;" />
   <div id="lastUpdate">Last update: N/A</div>
   <div id="stats">Stats: N/A</div>
 
@@ -108,6 +133,11 @@
     const lastUpdateEl = document.getElementById('lastUpdate');
     const statsEl = document.getElementById('stats');
     const pointToggle = document.getElementById('pointToggle');
+    const unitToggle = document.getElementById('unitToggle');
+
+    function convertValue(valC) {
+      return unitToggle.checked ? (valC * 9/5 + 32) : valC;
+    }
 
     // Chart.js setup
     // Register zoom plugin
@@ -123,8 +153,8 @@
             pan: {
               enabled: true,
               mode: 'x',
-              threshold: 0,
-              modifierKey: null
+              threshold: 1
+              // modifierKey: 'ctrl'
             },
             zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
           }
@@ -157,7 +187,31 @@
       chart.update();
     }
 
-    rawToggle.addEventListener('change', () => chart.update());
+    rawToggle.addEventListener('change', () => {
+      // recalc existing points on raw/corrected toggle
+      chart.data.datasets.forEach(ds => {
+        ds.data = ds.data.map(pt => {
+          const base = rawToggle.checked ? pt.raw : pt.corrected;
+          return { ...pt, y: convertValue(base) };
+        });
+      });
+      chart.update();
+    });
+    unitToggle.addEventListener('change', () => {
+      // convert all existing points
+      chart.data.datasets.forEach(ds => {
+        ds.data = ds.data.map(pt => {
+          const base = rawToggle.checked ? pt.raw : pt.corrected;
+          return { ...pt, y: convertValue(base) };
+        });
+      });
+      // update y-axis label
+      chart.options.scales.y.title.text = unitToggle.checked
+        ? 'Temperature (°F)'
+        : 'Temperature (°C)';
+      chart.update();
+      updateStats();
+    });
 
     thresholdInput.addEventListener('input', () => {
       const val = parseFloat(thresholdInput.value);
@@ -198,13 +252,21 @@
       const r = snap.val();
       const chan = `${r.board_id}-${r.channel}`;
       const time = new Date(r.timestamp);
-      const value = rawToggle.checked ? r.raw_temp : r.corrected_temp;
+      const rawVal = rawToggle.checked ? r.raw_temp : r.corrected_temp;
+      const value = convertValue(rawVal);
       chart.data.datasets.forEach(ds => {
         if (ds.label === chan) {
-          ds.data.push({ x: time, y: value });
+          ds.data.push({
+            x: time,
+            raw: r.raw_temp,
+            corrected: r.corrected_temp,
+            y: value
+          });
         }
       });
       chart.update();
+      document.getElementById('panSlider').value = 100;
+      document.getElementById('yPanSlider').value = 100;
       lastUpdateEl.textContent = 'Last update: ' + time.toLocaleTimeString();
       updateStats();
     });
@@ -237,6 +299,41 @@
       const avg = (allData.reduce((a,b) => a+b, 0)/allData.length).toFixed(2);
       statsEl.textContent = `Stats: Min ${min}°C | Max ${max}°C | Avg ${avg}°C`;
     }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      // Vertical slider (panSlider) now controls Y-axis panning
+      document.getElementById('panSlider').addEventListener('input', function () {
+        const sliderVal = parseInt(this.value);
+        const allValues = chart.data.datasets.flatMap(ds => ds.data.map(d => d.y));
+        if (!allValues.length) return;
+        const minY = Math.min(...allValues);
+        const maxY = Math.max(...allValues);
+        const totalSpanY = maxY - minY;
+        const viewSpanY = totalSpanY * 0.3;
+        const panStartY = minY + ((sliderVal / 100) * (totalSpanY - viewSpanY));
+        const panEndY = panStartY + viewSpanY;
+        chart.options.scales.y.min = panStartY;
+        chart.options.scales.y.max = panEndY + 20;
+        chart.update();
+      });
+
+      // Horizontal slider (yPanSlider) now controls X-axis panning
+      document.getElementById('yPanSlider').addEventListener('input', function () {
+        const sliderVal = parseInt(this.value);
+        const datasets = chart.data.datasets;
+        const allTimestamps = datasets.flatMap(ds => ds.data.map(d => d.x)).sort((a, b) => a - b);
+        if (!allTimestamps.length) return;
+        const minTime = allTimestamps[0].getTime();
+        const maxTime = allTimestamps[allTimestamps.length - 1].getTime();
+        const totalSpan = maxTime - minTime;
+        const viewSpan = totalSpan * 0.3;
+        const panStart = minTime + ((sliderVal / 100) * (totalSpan - viewSpan));
+        const panEnd = panStart + viewSpan;
+        chart.options.scales.x.min = panStart;
+        chart.options.scales.x.max = panEnd;
+        chart.update();
+      });
+    });
   </script>
 </body>
 </html>
