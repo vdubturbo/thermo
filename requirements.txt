@@ -1,0 +1,5 @@
+matplotlib
+tk
+firebase-admin
+requests
+firebase-admin

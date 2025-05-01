@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "thermomonitor-467ea",
+    "test": "thermomonitor-467ea"
+  },
+  "targets": {},
+  "etags": {}
+}

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thermocouple Dashboard</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <!-- Chart.js and Annotation plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@1.1.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@^3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #controls { margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    #channelControls { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+    .channel-box { display: flex; align-items: center; gap: 5px; }
+    canvas { max-width: 100%; height: auto; }
+    #stats, #lastUpdate { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Thermocouple Dashboard</h1>
+  <div id="controls">
+    <div>
+      <label for="thresholdInput">Alert Threshold (°C):</label>
+      <input type="number" id="thresholdInput" placeholder="e.g. 100" />
+    </div>
+    <div>
+      <label for="rawToggle">Show Calibrated Values:</label>
+      <input type="checkbox" id="rawToggle" checked />
+    </div>
+    <button id="downloadBtn">Download CSV</button>
+    <div>
+      <label for="pointToggle">Show Points:</label>
+      <input type="checkbox" id="pointToggle" checked />
+    </div>
+    <div>
+      <button id="openDonutBtn">Temp Monitor Window</button>
+    </div>
+  </div>
+
+  <div id="channelControls"></div>
+
+  <canvas id="tempChart"></canvas>
+  <div id="lastUpdate">Last update: N/A</div>
+  <div id="stats">Stats: N/A</div>
+
+  <script>
+    // TODO: Replace with your Firebase project config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCTRiBIILwjjB4GfBHQ7xU74KQZgpgvQZ0",
+      authDomain: "thermomonitor-467ea.firebaseapp.com",
+      databaseURL: "https://thermomonitor-467ea-default-rtdb.firebaseio.com",
+      projectId: "thermomonitor-467ea",
+      storageBucket: "thermomonitor-467ea.firebasestorage.app",
+      messagingSenderId: "986825023684",
+      appId: "1:986825023684:web:5b1915f5e65c92ce48e991",
+      measurementId: "G-8PJKB3TV0F"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Channels and colors state
+    const channels = [];
+    const channelColors = {};
+    const selectedChannels = new Set();
+
+    const channelControlsDiv = document.getElementById('channelControls');
+    // Preset distinct default colors for each channel
+    const defaultColors = [
+      '#e6194b','#3cb44b','#ffe119','#4363d8','#f58231','#911eb4',
+      '#46f0f0','#f032e6','#bcf60c','#fabebe','#008080','#e6beff',
+      '#9a6324','#fffac8','#800000','#aaffc3'
+    ];
+    for (let board = 0; board <= 1; board++) {
+      for (let ch = 1; ch <= 8; ch++) {
+        const label = `${board}-${ch}`;
+        channels.push(label);
+        selectedChannels.add(label);
+        const idx = board * 8 + (ch - 1);
+        channelColors[label] = defaultColors[idx];
+        const box = document.createElement('div');
+        box.className = 'channel-box';
+        box.innerHTML = `
+          <input type="checkbox" id="chk-${label}" checked />
+          <label for="chk-${label}">${label}</label>
+          <input type="color" id="col-${label}" value="${channelColors[label]}" />
+        `;
+        channelControlsDiv.appendChild(box);
+        document.getElementById(`chk-${label}`).addEventListener('change', e => {
+          const ds = chart.data.datasets.find(ds => ds.label === label);
+          ds.hidden = !e.target.checked;
+          chart.update();
+        });
+        document.getElementById(`col-${label}`).addEventListener('input', e => {
+          channelColors[label] = e.target.value;
+          resetColors();
+        });
+      }
+    }
+
+    const thresholdInput = document.getElementById('thresholdInput');
+    const rawToggle = document.getElementById('rawToggle');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const lastUpdateEl = document.getElementById('lastUpdate');
+    const statsEl = document.getElementById('stats');
+    const pointToggle = document.getElementById('pointToggle');
+
+    // Chart.js setup
+    // Register zoom plugin
+    Chart.register(ChartZoom);
+    const ctx = document.getElementById('tempChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets: [] },
+      options: {
+        plugins: {
+          annotation: { annotations: {} },
+          zoom: {
+            pan: {
+              enabled: true,
+              mode: 'x',
+              threshold: 0,
+              modifierKey: null
+            },
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+          }
+        },
+        responsive: true,
+        scales: {
+          x: {
+            type: 'time',
+            distribution: 'linear',
+            time: {
+              unit: 'second',
+              displayFormats: { second: 'h:mm:ss' }
+            },
+            title: { display: true, text: 'Time' }
+          },
+          y: { title: { display: true, text: 'Temperature (°C)' } }
+        }
+      }
+    });
+    initializeDatasets();
+    chart.update();
+
+    // Reset zoom on double-click
+    document.getElementById('tempChart').addEventListener('dblclick', () => {
+      chart.resetZoom();
+    });
+
+    function resetColors() {
+      chart.data.datasets.forEach(ds => ds.borderColor = channelColors[ds.label]);
+      chart.update();
+    }
+
+    rawToggle.addEventListener('change', () => chart.update());
+
+    thresholdInput.addEventListener('input', () => {
+      const val = parseFloat(thresholdInput.value);
+      if (!isNaN(val)) {
+        chart.options.plugins.annotation.annotations.thresholdLine = {
+          type: 'line', yMin: val, yMax: val,
+          borderColor: 'red', borderWidth: 2,
+          label: { content: 'Threshold', enabled: true }
+        };
+      } else delete chart.options.plugins.annotation.annotations.thresholdLine;
+      chart.update();
+    });
+
+    pointToggle.addEventListener('change', () => {
+      chart.data.datasets.forEach(ds => ds.pointRadius = pointToggle.checked ? 3 : 0);
+      chart.update();
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      db.ref('readings').once('value').then(snap => {
+        const data = snap.val() || {};
+        const rows = [['timestamp','channel','raw','corrected']];
+        Object.values(data).forEach(r => {
+          const chan = `${r.board_id}-${r.channel}`;
+          if (selectedChannels.has(chan)) rows.push([r.timestamp, chan, r.raw_temp, r.corrected_temp]);
+        });
+        const csv = rows.map(r => r.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url;
+        a.download = 'thermocouple_data.csv'; a.click();
+        URL.revokeObjectURL(url);
+      });
+    });
+
+    // Subscribe to Firebase
+    db.ref('readings').limitToLast(100).on('child_added', snap => {
+      const r = snap.val();
+      const chan = `${r.board_id}-${r.channel}`;
+      const time = new Date(r.timestamp);
+      const value = rawToggle.checked ? r.raw_temp : r.corrected_temp;
+      chart.data.datasets.forEach(ds => {
+        if (ds.label === chan) {
+          ds.data.push({ x: time, y: value });
+        }
+      });
+      chart.update();
+      lastUpdateEl.textContent = 'Last update: ' + time.toLocaleTimeString();
+      updateStats();
+    });
+
+    // Open the donut dashboard in a popup window
+    document.getElementById('openDonutBtn').addEventListener('click', () => {
+      window.open('donut_dashboard.html', 'DonutGrid', 'width=800,height=900');
+    });
+
+    function initializeDatasets() {
+      chart.data.datasets = channels.map(label => ({
+        label,
+        data: [],
+        borderColor: channelColors[label],
+        borderWidth: 2,
+        fill: false,
+        tension: 0.1,
+        spanGaps: true,
+        showLine: true,
+        hidden: !selectedChannels.has(label),
+        pointRadius: pointToggle.checked ? 3 : 0
+      }));
+    }
+
+    function updateStats() {
+      const allData = chart.data.datasets.flatMap(ds => ds.data.map(p => p.y));
+      if (!allData.length) { statsEl.textContent = 'Stats: N/A'; return; }
+      const min = Math.min(...allData).toFixed(2);
+      const max = Math.max(...allData).toFixed(2);
+      const avg = (allData.reduce((a,b) => a+b, 0)/allData.length).toFixed(2);
+      statsEl.textContent = `Stats: Min ${min}°C | Max ${max}°C | Avg ${avg}°C`;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Donut Thermocouple (Latest)</title>
+  <script>
+    window.onload = function () {
+      console.log('Donut Dashboard v3 loaded');
+      // Firebase configuration
+      const firebaseConfig = {
+        apiKey: "AIzaSyCTRiBIILwjjB4GfBHQ7xU74KQZgpgvQZ0",
+        authDomain: "thermomonitor-467ea.firebaseapp.com",
+        databaseURL: "https://thermomonitor-467ea-default-rtdb.firebaseio.com",
+        projectId: "thermomonitor-467ea",
+        storageBucket: "thermomonitor-467ea.firebasestorage.app",
+        messagingSenderId: "986825023684",
+        appId: "1:986825023684:web:5b1915f5e65c92ce48e991",
+        measurementId: "G-8PJKB3TV0F"
+      };
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.database();
+      console.log('Firebase initialized. DB ref for readings:', db.ref('readings'));
+
+      // Threshold inputs
+      const greenMaxInput = document.getElementById('greenMaxInput');
+      const yellowMaxInput = document.getElementById('yellowMaxInput');
+      const redMaxInput = document.getElementById('redMaxInput');
+
+      const centerX = 100;
+      const centerY = 100;
+      const radius = 80;
+      const startAngle = 135;
+      const endAngle = 405;
+      const maxTemp = 250;
+
+      function updateGauge(r) {
+        // Add debug log for update
+        console.log("Update received:", r);
+        // Only update gauges for provided board/channel
+        if (typeof r.board_id === 'undefined' || typeof r.channel === 'undefined') return;
+        const tempVal = typeof r.raw_temp === 'number' ? r.raw_temp : 0;
+
+        const clampedTemp = Math.min(Math.max(tempVal, 0), maxTemp);
+        const greenMax = parseInt(greenMaxInput.value);
+        const yellowMax = parseInt(yellowMaxInput.value);
+
+        let color;
+        if (tempVal <= greenMax) {
+          color = "#4caf50";
+        } else if (tempVal <= yellowMax) {
+          color = "#ff9800";
+        } else {
+          color = "#f44336";
+        }
+
+        // Gauge stroke styling
+        const arcId = `gaugeArc-${r.board_id + 1}-${r.channel}`;
+        const textId = `gaugeText-${r.board_id + 1}-${r.channel}`;
+        console.log(`Looking for arc: ${arcId}, text: ${textId}`);
+        const arc = document.getElementById(arcId);
+        const text = document.getElementById(textId);
+        if (!arc || !text) return;
+
+        const fullLength = 2 * Math.PI * radius * (270 / 360); // 270° arc
+        const visibleLength = (clampedTemp / maxTemp) * fullLength;
+
+        arc.setAttribute("stroke-dasharray", `${visibleLength} ${fullLength}`);
+        arc.setAttribute("stroke-dashoffset", "0");
+        arc.setAttribute("stroke", color);
+
+        text.textContent = tempVal.toFixed(1) + " °C";
+        text.setAttribute("fill", color);
+      }
+
+      greenMaxInput.addEventListener('change', () => {
+        // Trigger update with last known temp if any
+      });
+      yellowMaxInput.addEventListener('change', () => {
+        // Trigger update with last known temp if any
+      });
+      redMaxInput.addEventListener('change', () => {
+        // redMax is not used in color logic currently
+      });
+
+      // Subscribe to the latest readings (by timestamp) and update on value changes
+      const latestRef = db.ref('readings').orderByChild('timestamp').limitToLast(32);
+      latestRef.on('value', snapshot => {
+        const readings = Object.values(snapshot.val() || {});
+        readings.forEach(updateGauge);
+      });
+    };
+  </script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; display: flex; flex-direction: column; align-items: center; }
+    #controls { margin-bottom: 20px; }
+    #controls label { margin-right: 15px; }
+    #chartContainer { width: 200px; height: 200px; }
+    #chartContainer canvas { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <h1>Donut Thermocouple (Latest Reading)</h1>
+  <div id="controls">
+    <label>Green Max (°C): <input type="number" id="greenMaxInput" value="100" min="0" max="250"/></label>
+    <label>Yellow Max (°C): <input type="number" id="yellowMaxInput" value="150" min="0" max="250"/></label>
+    <label>Red Max (°C): <input type="number" id="redMaxInput" value="250" min="0" max="500"/></label>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 40px; align-items: center;">
+  <div style="display: flex; align-items: center; gap: 20px; border: 1px solid #ccc; padding: 10px; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); border-radius: 8px; align-items: center;">
+    <div style="writing-mode: vertical-rl; text-align: center; font-weight: bold;">Board 1</div>
+    <div style="display: grid; grid-template-columns: repeat(4, 150px); justify-content: center; gap: 20px;">
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-1" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-1" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 1</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-2" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-2" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 2</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-3" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-3" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 3</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-4" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-4" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 4</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-5" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-5" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 5</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-6" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-6" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 6</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-7" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-7" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 7</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-1-8" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-1-8" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 8</text>
+            </svg>
+          </div>
+        </div>
+      
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 20px; border: 1px solid #ccc; padding: 10px; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); border-radius: 8px; align-items: center;">
+    <div style="writing-mode: vertical-rl; text-align: center; font-weight: bold;">Board 2</div>
+    <div style="display: grid; grid-template-columns: repeat(4, 150px); justify-content: center; gap: 20px;">
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-1" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-1" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 1</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-2" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-2" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 2</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-3" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-3" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 3</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-4" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-4" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 4</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-5" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-5" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 5</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-6" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-6" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 6</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-7" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-7" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 7</text>
+            </svg>
+          </div>
+        </div>
+      
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="padding-top: 10px;">
+            <svg width="100" height="100" viewBox="0 0 180 180" style="overflow: visible;">
+              <path d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#ddd" stroke-width="20" fill="none"/>
+              <path id="gaugeArc-2-8" d="M 57.58 142.42 A 80 80 0 1 1 142.42 142.42" stroke="#4caf50" stroke-width="20" fill="none" stroke-linecap="round" stroke-dasharray="0 999"/>
+              <text id="gaugeText-2-8" x="100" y="105" text-anchor="middle" font-size="30" font-weight="bold" fill="#4caf50">0.0 °C</text>
+            </svg>
+          </div>
+          <div style="font-weight: 500; margin-top: 2px; text-align: center; width: 100px;">
+            <svg width="100" height="30">
+              <text x="56" y="20" text-anchor="middle" font-size="16" font-weight="500" fill="#222">Ch 8</text>
+            </svg>
+          </div>
+        </div>
+      
+    </div>
+  </div>
+</div>
+</body>
+</html>
